@@ -13,6 +13,12 @@ module RubyLLM
       include Responses::Streaming
       include Responses::Tools
 
+      def supports_deferred_tools?
+        capabilities = provider.capabilities
+        !model.nil? && capabilities.respond_to?(:supports_tool_search?) &&
+          capabilities.supports_tool_search?(model.id)
+      end
+
       SERVER_TOOL_ALIASES = {
         web_search: { tool: { type: 'web_search' } },
         file_search: { tool: { type: 'file_search' } },

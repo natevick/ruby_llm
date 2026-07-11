@@ -27,6 +27,7 @@ module RubyLLM
         @finish_reason = nil
         @latest_tool_call_id = nil
         @tool_call_ids_by_index = {}
+        @tool_references = []
       end
 
       def add(chunk)
@@ -35,6 +36,7 @@ module RubyLLM
 
         handle_chunk_content(chunk)
         accumulate_citations(chunk.citations)
+        accumulate_tool_references(chunk.tool_references)
         append_thinking_from_chunk(chunk)
         accumulate_server_tool_calls(chunk.server_tool_calls)
         @raw_content = chunk.raw_content if chunk.raw_content
@@ -65,6 +67,7 @@ module RubyLLM
           server_tool_calls: @server_tool_calls,
           raw_content: @raw_content,
           raw_reasoning: @raw_reasoning,
+          tool_references: @tool_references,
           finish_reason: @finish_reason,
           model: model,
           tool_calls: tool_calls_from_stream(response),
@@ -78,6 +81,12 @@ module RubyLLM
       def accumulate_citations(new_citations)
         new_citations.each do |citation|
           @citations << citation unless @citations.include?(citation)
+        end
+      end
+
+      def accumulate_tool_references(new_references)
+        new_references.each do |reference|
+          @tool_references << reference unless @tool_references.include?(reference)
         end
       end
 
@@ -120,7 +129,8 @@ module RubyLLM
             name: tc.name,
             arguments: arguments,
             thought_signature: tc.thought_signature,
-            remote: tc.remote?
+            remote: tc.remote?,
+            namespace: tc.namespace
           )
         end
       end
@@ -150,7 +160,8 @@ module RubyLLM
           name: tool_call.name,
           arguments: initial_tool_call_arguments(tool_call),
           thought_signature: tool_call.thought_signature,
-          remote: tool_call.remote?
+          remote: tool_call.remote?,
+          namespace: tool_call.namespace
         )
         @tool_call_ids_by_index[stream_key] = tool_call_id unless stream_key.nil?
         @latest_tool_call_id = tool_call_id

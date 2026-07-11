@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'delegate'
 require 'schematist'
 
 module RubyLLM
@@ -195,6 +196,15 @@ module RubyLLM
         self
       end
 
+      def deferred(value = true) # rubocop:disable Style/OptionalBooleanParameter
+        @deferred = value ? true : false
+        self
+      end
+
+      def deferred?
+        @deferred == true
+      end
+
       def split_result(result) # :nodoc:
         case result
         when Attachment then ['', [result]]
@@ -256,6 +266,25 @@ module RubyLLM
     # Returns the provider-specific tool metadata declared on the class.
     def provider_options
       self.class.provider_options
+    end
+
+    def deferred?
+      self.class.deferred?
+    end
+
+    class Registration < SimpleDelegator # rubocop:disable Style/Documentation
+      def initialize(tool, deferred:)
+        super(tool)
+        @deferred = deferred
+      end
+
+      def deferred?
+        @deferred
+      end
+
+      def tool
+        __getobj__
+      end
     end
 
     # Returns the JSON Schema for the tool's arguments, whether declared

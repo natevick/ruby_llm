@@ -74,12 +74,14 @@ module RubyLLM
           return chunk unless item['type'] == 'function_call'
 
           chunk tool_calls: {
-            data['output_index'] => ToolCall.new(id: item['call_id'], name: item['name'], arguments: +'')
+            data['output_index'] => ToolCall.new(id: item['call_id'], name: item['name'], arguments: +'',
+                                                 namespace: item['namespace'])
           }
         end
 
         def build_item_done_chunk(data)
           item = data['item']
+          return chunk(tool_references: parse_tool_references([item])) if item['type'] == 'tool_search_output'
           return chunk unless item['type'] == 'reasoning' && item['encrypted_content']
 
           chunk thinking: Thinking.build(text: nil, signature: item['encrypted_content'])

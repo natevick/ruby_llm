@@ -7,8 +7,27 @@ module RubyLLM
       module Tools
         module_function
 
+        NATIVE_TOOL_SEARCH = {
+          type: 'tool_search_tool_bm25_20251119',
+          name: 'tool_search_tool_bm25'
+        }.freeze
+
         def find_tool_uses(blocks)
           blocks.select { |c| c['type'] == 'tool_use' }
+        end
+
+        def find_tool_references(blocks)
+          blocks.select { |c| c['type'] == 'tool_search_tool_result' }.flat_map do |block|
+            content = block['content']
+            references = content.is_a?(Hash) ? Array(content['tool_references']) : []
+            references.filter_map { |reference| reference['tool_name'] }
+          end
+        end
+
+        def tool_search_block?(block)
+          return true if block['type'] == 'tool_search_tool_result'
+
+          block['type'] == 'server_tool_use' && block['name'] == NATIVE_TOOL_SEARCH[:name]
         end
 
         def format_tool_result(msg)
@@ -56,10 +75,32 @@ module RubyLLM
             description: tool.description,
             input_schema: input_schema || default_input_schema
           }
+          declaration[:defer_loading] = true if deferred?(tool)
+          unless tool.provider_options.empty?
+            declaration = RubyLLM::Support::Utils.deep_merge(declaration, tool.provider_options)
+          end
 
-          return declaration if tool.provider_options.empty?
+          reject_deferred_cache_control!(tool, declaration)
+          declaration
+        end
 
-          RubyLLM::Support::Utils.deep_merge(declaration, tool.provider_options)
+        def reject_deferred_cache_control!(tool, declaration)
+          return unless declaration[:defer_loading]
+          return unless declaration.key?(:cache_control) || declaration.key?('cache_control')
+
+          raise ArgumentError,
+                "Tool #{tool.name}: defer_loading cannot be combined with cache_control (Anthropic returns 400). " \
+                'Put the cache breakpoint on a non-deferred tool.'
+        end
+
+        def format_tools(tools)
+          formatted = tools.values.map { |tool| function_for(tool) }
+          formatted << NATIVE_TOOL_SEARCH.dup if formatted.any? { |entry| entry[:defer_loading] }
+          formatted
+        end
+
+        def deferred?(tool)
+          tool.is_a?(RubyLLM::Tool::Registration) && tool.deferred?
         end
 
         def extract_tool_calls(data)

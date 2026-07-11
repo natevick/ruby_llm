@@ -11,6 +11,12 @@ module RubyLLM
       include Anthropic::Streaming
       include Anthropic::Tools
 
+      def supports_deferred_tools?
+        capabilities = provider.capabilities
+        !model.nil? && capabilities.respond_to?(:supports_tool_search?) &&
+          capabilities.supports_tool_search?(model.id)
+      end
+
       # How many times a turn that stops with pause_turn is automatically
       # continued before RubyLLM returns what it has.
       MAX_PAUSE_TURN_CONTINUATIONS = 8

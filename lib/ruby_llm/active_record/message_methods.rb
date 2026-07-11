@@ -29,6 +29,7 @@ module RubyLLM
           server_tool_calls: server_tool_calls,
           raw_content: optional_column(:raw_content),
           raw_reasoning: optional_column(:raw_reasoning),
+          tool_references: optional_column(:tool_references),
           usage_entries: entries,
           tool_calls: tool_calls,
           tool_call_id: parent_tool_call&.id,

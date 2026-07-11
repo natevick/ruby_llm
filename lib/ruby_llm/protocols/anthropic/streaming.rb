@@ -39,9 +39,16 @@ module RubyLLM
             cache_write_tokens: extract_cache_write_tokens(data),
             server_tool_use: extract_server_tool_use(data),
             tool_calls: extract_tool_calls(data),
+            tool_references: extract_tool_references(data),
             finish_reason: normalize_finish_reason(data.dig('delta', 'stop_reason')),
             **stream_end_fields(data)
           )
+        end
+
+        def extract_tool_references(data)
+          return [] unless data['type'] == 'content_block_start'
+
+          Tools.find_tool_references([data['content_block']].compact)
         end
 
         def extract_server_tool_use(data)

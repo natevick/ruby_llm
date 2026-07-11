@@ -24,6 +24,7 @@ module RubyLLM
   class Chat # rubocop:disable Metrics/ClassLength
     include Enumerable
     include Support::Inspectable
+    include ToolSearch
 
     # The provider-neutral options #with_compaction accepts.
     COMPACTION_OPTIONS = %i[at instructions pause_after].freeze
@@ -88,7 +89,7 @@ module RubyLLM
     # configuration.
     attr_reader :context
 
-    attr_reader :tool_prefs, :fallback_errors, :usage_entries # :nodoc:
+    attr_reader :tool_prefs, :fallback_errors, :usage_entries, :tool_catalog # :nodoc:
 
     # Returns the +choice+, +calls+, and +concurrency+ set with
     # #with_tool_options, with +nil+ for anything left at the default.
@@ -119,6 +120,7 @@ module RubyLLM
       @messages = []
       @usage_entries = []
       @tools = {}
+      @tool_catalog = ToolCatalog.new
       @provider_tools = []
       @tool_prefs = { choice: nil, calls: nil }
       @concurrency = normalize_tool_concurrency(@config.tool_concurrency)
@@ -338,12 +340,12 @@ module RubyLLM
     #
     #   chat.with_tools(nil).with_tools(NewTool)
     #
-    def with_tools(*tools)
-      @tools.clear if tools == [nil]
-      tools.flatten.compact.each do |tool|
-        tool_instance = tool.is_a?(Class) ? tool.new : tool
-        @tools[tool_instance.name.to_sym] = tool_instance
+    def with_tools(*tools, defer: nil)
+      if tools == [nil]
+        @tools.clear
+        @tool_catalog = ToolCatalog.new
       end
+      tools.flatten.compact.each { |tool| register_tool(tool, defer: defer) }
       self
     end
 
@@ -751,7 +753,7 @@ module RubyLLM
       @provider.count_tokens(
         preprocessed_messages(request_messages),
         model: @model,
-        tools: @tools,
+        tools: effective_tools,
         tool_prefs: @tool_prefs,
         thinking: resolved_thinking,
         schema: @schema,
@@ -838,6 +840,7 @@ module RubyLLM
       end
       run_callbacks(:before_message)
       add_message response
+      record_tool_search(response)
       run_callbacks(:after_message, response)
       response
     end
@@ -848,7 +851,7 @@ module RubyLLM
     def render
       @provider.render(
         preprocessed_messages,
-        tools: @tools,
+        tools: effective_tools,
         provider_tools: @provider_tools,
         tool_prefs: @tool_prefs,
         temperature: @temperature,
@@ -995,6 +998,7 @@ module RubyLLM
       link_completion_usage(result, usage_start)
       run_callbacks(:before_message) unless streaming
       add_message result
+      record_tool_search(result)
       run_callbacks(:after_message, result)
     end
 
@@ -1009,6 +1013,7 @@ module RubyLLM
         input_messages: messages.dup,
         message_count: messages.size,
         tools: tools.keys,
+        deferred_tools: @tool_catalog.deferred_tools.keys,
         provider_tools: provider_tools,
         tool_choice: tool_prefs[:choice],
         tool_call_limit: tool_prefs[:calls],
@@ -1146,7 +1151,7 @@ module RubyLLM
 
       @provider.complete(
         preprocessed_messages,
-        tools: @tools,
+        tools: effective_tools,
         provider_tools: @provider_tools,
         tool_prefs: @tool_prefs,
         temperature: @temperature,
@@ -1250,7 +1255,7 @@ module RubyLLM
       executable = {}
       denied = {}
       pending.each do |id, tool_call|
-        tool = tools[tool_call.name.to_sym]
+        tool = find_tool(tool_call.name)
         if tool&.requires_approval?
           decision = tool_call_approval(tool, tool_call)
           next if decision.nil?
@@ -1282,7 +1287,7 @@ module RubyLLM
     def approval_pending?(tool_call)
       return tool_call_approval(nil, tool_call).nil? if tool_call.remote?
 
-      tool = tools[tool_call.name.to_sym]
+      tool = find_tool(tool_call.name)
       return false unless tool&.requires_approval?
 
       tool_call_approval(tool, tool_call).nil?
@@ -1335,13 +1340,8 @@ module RubyLLM
     end
 
     def execute_tool(tool_call)
-      tool = tools[tool_call.name.to_sym]
-      if tool.nil?
-        return {
-          error: "Model tried to call unavailable tool `#{tool_call.name}`. " \
-                 "Available tools: #{tools.keys.to_json}."
-        }
-      end
+      tool = find_tool(tool_call.name)
+      return unavailable_tool_error(tool_call) if tool.nil?
 
       args = tool_call.arguments
       payload = {
@@ -1371,7 +1371,7 @@ module RubyLLM
         @tool_prefs[:choice] = nil
       else
         normalized_choice = normalize_tool_choice(choice)
-        valid_tool_choices = %i[auto none required] + tools.keys
+        valid_tool_choices = %i[auto none required] + tools.keys + @tool_catalog.deferred_tools.keys
         unless valid_tool_choices.include?(normalized_choice)
           raise InvalidToolChoiceError,
                 "Invalid tool choice: #{choice}. Valid choices are: #{valid_tool_choices.join(', ')}"
@@ -1413,6 +1413,7 @@ module RubyLLM
 
     def tool_name_for_choice_class(tool_class)
       matched_tool_name = tools.find { |_name, tool| tool.is_a?(tool_class) }&.first
+      matched_tool_name ||= @tool_catalog.deferred_tools.find { |_name, tool| tool.is_a?(tool_class) }&.first
       return matched_tool_name if matched_tool_name
       return tool_class.tool_name.to_sym if tool_class.respond_to?(:tool_name)
 

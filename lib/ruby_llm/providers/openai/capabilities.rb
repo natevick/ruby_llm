@@ -62,6 +62,15 @@ module RubyLLM
           supported = capabilities | additions
           supported | (supported.include?('function_calling') ? TOOL_CAPABILITIES : [])
         end
+
+        def self.supports_tool_search?(model_id)
+          match = model_id.to_s.match(/\Agpt-(\d+)(?:\.(\d+))?(?=-|\z)/)
+          return false unless match
+
+          major = match[1].to_i
+          minor = match[2].to_i
+          major > 5 || (major == 5 && minor >= 4)
+        end
       end
     end
   end

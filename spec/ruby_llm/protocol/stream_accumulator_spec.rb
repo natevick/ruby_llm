@@ -24,6 +24,26 @@ RSpec.describe RubyLLM::Protocol::StreamAccumulator do
       expect(message.model).to eq('model-a')
     end
 
+    it 'accumulates deferred-tool references onto the final message, de-duplicated' do
+      accumulator = described_class.new
+      refs = ->(names) { RubyLLM::Chunk.new(role: :assistant, content: nil, tool_references: names) }
+
+      accumulator.add(RubyLLM::Chunk.new(role: :assistant, content: 'searching'))
+      accumulator.add(refs.call(%w[weather_lookup]))
+      accumulator.add(refs.call(%w[weather_lookup stock_price]))
+
+      expect(accumulator.to_message(nil).tool_references).to eq(%w[weather_lookup stock_price])
+    end
+
+    it 'carries a tool call namespace through to the final message' do
+      accumulator = described_class.new
+      tool_call = RubyLLM::ToolCall.new(id: 'call_1', name: 'weather', arguments: '{}', namespace: 'functions')
+
+      accumulator.add(RubyLLM::Chunk.new(role: :assistant, content: nil, tool_calls: { 0 => tool_call }))
+
+      expect(accumulator.to_message(nil).tool_calls['call_1'].namespace).to eq('functions')
+    end
+
     it 'handles tool call deltas that omit arguments' do
       accumulator = described_class.new
       tool_call = RubyLLM::ToolCall.new(id: 'call_1', name: 'weather', arguments: nil)

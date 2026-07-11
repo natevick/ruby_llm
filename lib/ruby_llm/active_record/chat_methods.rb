@@ -217,7 +217,7 @@ module RubyLLM
         with_end_user with_compaction
         with_provider_options with_headers with_schema
         before_request before_message after_message before_tool_call after_tool_result
-        before_fallback after_fallback
+        before_fallback after_fallback after_tool_search
       ].freeze
 
       ##
@@ -449,7 +449,7 @@ module RubyLLM
 
       PASSTHROUGH_CHAT_DELEGATES = %i[
         caching citations compaction concurrency end_user fallbacks headers max_output_tokens provider_options
-        schema provider_tools temperature thinking tool_options tools
+        schema provider_tools temperature thinking tool_catalog tool_options tools
         add_completion count_tokens each render
       ].freeze
 
@@ -948,6 +948,7 @@ module RubyLLM
         assign_supported_attribute(attrs, :server_tool_calls, message.server_tool_calls.map(&:to_h).presence)
         assign_supported_attribute(attrs, :raw_content, message.raw_content)
         assign_supported_attribute(attrs, :raw_reasoning, message.raw_reasoning)
+        assign_supported_attribute(attrs, :tool_references, message.tool_references.presence)
         assign_supported_attribute(attrs, :finish_reason, message.finish_reason)
         assign_supported_attribute(attrs, :cache_until_here, message.cache_until_here?)
         attrs

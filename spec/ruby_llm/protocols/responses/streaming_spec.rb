@@ -9,6 +9,21 @@ RSpec.describe RubyLLM::Protocols::Responses::Streaming do
     protocol.send(:build_chunk, data)
   end
 
+  it 'surfaces tool_search_output tools as tool_references' do
+    item = { 'type' => 'tool_search_output',
+             'tools' => [{ 'name' => 'weather_lookup' }, { 'name' => 'stock_price' }] }
+    chunk = build_chunk({ 'type' => 'response.output_item.done', 'item' => item })
+
+    expect(chunk.tool_references).to eq(%w[weather_lookup stock_price])
+  end
+
+  it 'keeps the namespace on a streamed function_call item' do
+    item = { 'type' => 'function_call', 'call_id' => 'c1', 'name' => 'weather_lookup', 'namespace' => 'functions' }
+    chunk = build_chunk({ 'type' => 'response.output_item.added', 'output_index' => 0, 'item' => item })
+
+    expect(chunk.tool_calls[0].namespace).to eq('functions')
+  end
+
   it 'streams output text deltas as content' do
     chunk = build_chunk({ 'type' => 'response.output_text.delta', 'delta' => 'Hel' })
 

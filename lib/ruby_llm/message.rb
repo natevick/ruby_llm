@@ -77,6 +77,8 @@ module RubyLLM
     # +nil+ when the provider returned none.
     attr_reader :raw_reasoning # :nodoc:
 
+    attr_reader :tool_references
+
     # The Chat this message belongs to, set when it is added to a
     # conversation. Backs #tool_results.
     attr_accessor :conversation # :nodoc:
@@ -105,6 +107,7 @@ module RubyLLM
       @server_tool_calls = Array(options[:server_tool_calls]).map { |call| coerce_value(call, ServerToolCall) }
       @raw_content = options[:raw_content]
       @raw_reasoning = options[:raw_reasoning]
+      @tool_references = Array(options[:tool_references])
       @finish_reason = options[:finish_reason]&.to_sym
       self.ruby_llm_usage_entries = options[:usage_entries] if options[:usage_entries]
       @cache_until_here = options.fetch(:cache_until_here, false)
@@ -243,6 +246,7 @@ module RubyLLM
         server_tool_calls: list_to_h(server_tool_calls),
         raw_content: raw_content,
         raw_reasoning: raw_reasoning,
+        tool_references: (tool_references unless tool_references.empty?),
         finish_reason: finish_reason,
         cache_until_here: cache_until_here? || nil
       }.merge(tokens.to_h).compact
@@ -280,7 +284,8 @@ module RubyLLM
         attributes = call.transform_keys(&:to_sym)
         [id, ToolCall.new(id: attributes[:id] || id, name: attributes[:name],
                           arguments: attributes[:arguments] || {},
-                          thought_signature: attributes[:thought_signature], remote: attributes.fetch(:remote, false))]
+                          thought_signature: attributes[:thought_signature], remote: attributes.fetch(:remote, false),
+                          namespace: attributes[:namespace])]
       end
     end
 
